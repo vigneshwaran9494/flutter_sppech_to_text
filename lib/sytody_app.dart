@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:testapp/languages.dart';
-import 'package:testapp/transcriptor.dart';
+import 'package:sytody/languages.dart';
+import 'package:sytody/transcriptor.dart';
 
 class SytodyApp extends StatefulWidget {
   @override

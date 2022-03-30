@@ -2,12 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:testapp/languages.dart';
-import 'package:testapp/recognizer.dart';
-import 'package:testapp/task.dart';
-
-import 'package:speech_to_text/speech_recognition_result.dart';
-import 'package:speech_to_text/speech_to_text.dart';
+import 'package:sytody/languages.dart';
+import 'package:sytody/recognizer.dart';
+import 'package:sytody/task.dart';
 
 class TranscriptorWidget extends StatefulWidget {
   final Language lang;
@@ -32,11 +29,10 @@ class _TranscriptorAppState extends State<TranscriptorWidget> {
   get numArchived => todos.where((t) => t.complete).length;
   Iterable<Task> get incompleteTasks => todos.where((t) => !t.complete);
 
-  SpeechToText _speechToText = SpeechToText();
-
   @override
   void initState() {
     super.initState();
+    SpeechRecognizer.setMethodCallHandler(_platformCallHandler);
     _activateRecognition();
   }
 
@@ -84,32 +80,57 @@ class _TranscriptorAppState extends State<TranscriptorWidget> {
     _cancelRecognitionHandler();
   }
 
-  void _doNothing() {}
-
-  void _onSpeechResult(SpeechRecognitionResult result) {
-    if (result.recognizedWords.isEmpty) return;
-    setState(() {
-      transcription = result.recognizedWords;
-    });
-  }
-
   Future _startRecognition() async {
-    await _speechToText.listen(onResult: _onSpeechResult);
-    //setState(() {});
+    final res = await SpeechRecognizer.start(widget.lang.code);
+    if (!res) {
+      showDialog(
+          context: context,
+          builder:  (BuildContext context) =>
+    const AlertDialog(title: Text('Recognition not started')));
+    }
   }
 
   Future _cancelRecognitionHandler() async {
-    await _speechToText.stop();
+    final res = await SpeechRecognizer.cancel();
 
     setState(() {
       transcription = '';
-      isListening = false;
+      isListening = res;
     });
   }
 
   Future _activateRecognition() async {
-    final res = await _speechToText.initialize();
+    final res = await SpeechRecognizer.activate();
     setState(() => authorized = res);
+  }
+
+  Future _platformCallHandler(MethodCall call) async {
+    switch (call.method) {
+      case "onSpeechAvailability":
+        setState(() => isListening = call.arguments);
+        break;
+      case "onSpeech":
+        if (todos.isNotEmpty) if (transcription == todos.last.label) return;
+        setState(() => transcription = call.arguments);
+        break;
+      case "onRecognitionStarted":
+        setState(() => isListening = true);
+        break;
+      case "onRecognitionComplete":
+        setState(() {
+          if (todos.isEmpty) {
+            transcription = call.arguments;
+          } else if (call.arguments == todos.last.label)
+            // on ios user can have correct partial recognition
+            // => if user add it before complete recognition just clear the transcription
+            transcription = '';
+          else
+            transcription = call.arguments;
+        });
+        break;
+      default:
+        print('Unknowm method ${call.method} ');
+    }
   }
 
   void _deleteTaskHandler(Task t) {
@@ -127,14 +148,17 @@ class _TranscriptorAppState extends State<TranscriptorWidget> {
     });
   }
 
+  void test(){
+
+  }
+
   Widget _buildButtonBar() {
     List<Widget> buttons = [
       !isListening
           ? _buildIconButton(authorized ? Icons.mic : Icons.mic_off,
-              authorized ? _startRecognition : _doNothing,
+              authorized ? _startRecognition : test,
               color: Colors.white, fab: true)
-          : _buildIconButton(
-              Icons.add, isListening ? _saveTranscription : _doNothing,
+          : _buildIconButton(Icons.add, isListening ? _saveTranscription : test,
               color: Colors.white,
               backgroundColor: Colors.greenAccent,
               fab: true),
@@ -144,9 +168,7 @@ class _TranscriptorAppState extends State<TranscriptorWidget> {
   }
 
   Widget _buildTranscriptionBox(
-          {required String text,
-          required VoidCallback onCancel,
-          required double width}) =>
+          {required String text, required VoidCallback onCancel, required double width}) =>
       new Container(
           width: width,
           color: Colors.grey.shade200,
@@ -178,9 +200,7 @@ class _TranscriptorAppState extends State<TranscriptorWidget> {
   }
 
   Widget _buildTaskWidgets(
-      {required Task task,
-      required VoidCallback onDelete,
-      required VoidCallback onComplete}) {
+      {required Task task, required VoidCallback onDelete, required VoidCallback onComplete}) {
     return new TaskWidget(
         label: task.label, onDelete: onDelete, onComplete: onComplete);
   }
